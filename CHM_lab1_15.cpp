@@ -1,11 +1,12 @@
 #include <iostream>
 #include <vector>
 #include <iomanip> 
-#include <fstream> 
 #include <cmath>  
 #include <string>
 #include <limits>
 #include <algorithm> // Для std::max
+#include <fstream>   // Для чтения файлов
+
 using namespace std;
 
 // Структура для подсчета операций
@@ -39,6 +40,13 @@ struct ProfileMatrix {
     vector<vector<double>> rows; // Ненулевые элементы каждой строки
 
     ProfileMatrix(int size = 0) : n(size), first_non_zero(size, 0), rows(size, vector<double>()) {}
+};
+
+// Структура для хранения тестового случая с именем и связанными файлами
+struct TestCase {
+    string name;
+    string matrixFile;
+    string vectorFile;
 };
 
 // Преобразование плотной матрицы в профильную
@@ -83,12 +91,10 @@ double getProfileElement(const ProfileMatrix& profile, int i, int j) {
 void setProfileElement(ProfileMatrix& profile, int i, int j, double value) {
     if(j < profile.first_non_zero[i]) {
         // Нужно расширить профиль строки
-        int old_nz = profile.rows[i].size();
-        int new_first = j;
-        int shift = new_first - profile.first_non_zero[i];
+        int shift = j - profile.first_non_zero[i];
         if(shift > 0) {
             profile.rows[i].insert(profile.rows[i].begin(), shift, 0.0);
-            profile.first_non_zero[i] = new_first;
+            profile.first_non_zero[i] = j;
         }
     }
     profile.rows[i][j - profile.first_non_zero[i]] = value;
@@ -113,82 +119,6 @@ void printVector(const vector<double>& vec)
     for (double v : vec) 
         cout << setw(10) << fixed << setprecision(4) << v << " ";
     cout << endl;
-}
-
-// Функция записи матрицы в файл в плотном формате
-bool writeMatrix(const string& matrixFile, const ProfileMatrix& profileMatrix) {
-    ofstream matrixStream(matrixFile);
-    if (!matrixStream.is_open()) {
-        cerr << "Не удалось открыть файл для записи матрицы." << endl;
-        return false;
-    }
-
-    vector<vector<double>> A = profileToDense(profileMatrix);
-    int n = A.size();
-    matrixStream << n << "\n";
-    for (int i = 0; i < n; i++) {
-        for(int j=0; j < n; j++) {
-            matrixStream << fixed << setprecision(4) << A[i][j] << " ";
-        }
-        matrixStream << "\n";
-    }
-    matrixStream.close();
-    return true;
-}
-
-// Функция записи вектора в файл
-bool writeVector(const string& vectorFile, const vector<double>& vec) {
-    ofstream vectorStream(vectorFile);
-    if (!vectorStream.is_open()) {
-        cerr << "Не удалось открыть файл для записи вектора." << endl;
-        return false;
-    }
-
-    for(double v : vec) {
-        vectorStream << fixed << setprecision(4) << v << "\n";
-    }
-    vectorStream.close();
-    return true;
-}
-
-// Функция чтения матрицы и вектора из файлов и преобразования матрицы в профильный формат
-bool readMatrixAndVector(const string& matrixFile, const string& vectorFile, ProfileMatrix& A, vector<double>& x) {
-    ifstream matrixStream(matrixFile);
-    ifstream vectorStream(vectorFile);
-
-    if (!matrixStream.is_open() || !vectorStream.is_open()) 
-    {
-        cerr << "Не удалось открыть файл." << endl;
-        return false;
-    }
-
-    int n;
-    matrixStream >> n; 
-    vector<vector<double>> denseA(n, vector<double>(n, 0.0));
-    x = vector<double>(n, 0);
-
-    // Считываем матрицу
-    for (int i = 0; i < n; i++) 
-    {
-        for (int j = 0; j < n; j++) 
-        {
-            matrixStream >> denseA[i][j];
-        }
-    }
-
-    // Считываем вектор
-    for (int i = 0; i < n; i++) 
-    {
-        vectorStream >> x[i];
-    }
-
-    matrixStream.close();
-    vectorStream.close();
-
-    // Преобразуем в профильное представление
-    A = denseToProfile(denseA);
-
-    return true;
 }
 
 // Функция умножения матрицы на вектор (плотная матрица)
@@ -218,7 +148,7 @@ vector<vector<double>> generateHilbertMatrix(int n) {
     return H;
 }
 
-// LU-разложение для профильной матрицы с подсчетом операций
+// Функция LU-разложения для профильной матрицы с подсчетом операций
 bool LU_SQ_Decomposition(ProfileMatrix& profileA) 
 {
     int n = profileA.n;
@@ -242,8 +172,7 @@ bool LU_SQ_Decomposition(ProfileMatrix& profileA)
                     opCount.multiplications +=1;
                 }
                 double value = A[j][j] - sum;
-                opCount.additions +=1;
-                opCount.multiplications +=1;
+                // Проверка на отрицательное или нулевое значение перед извлечением корня
                 if (value <= 0) 
                 {
                     cout << "Matrix is NOT LU(sq) decomposable!" << endl;
@@ -251,7 +180,7 @@ bool LU_SQ_Decomposition(ProfileMatrix& profileA)
                 }
                 L[j][j] = sqrt(value);
                 opCount.square_roots +=1;
-                U[j][j] = 1.0; // Диагональ U всегда 1 в Doolittle's метод (можно изменить при необходимости)
+                U[j][j] = 1.0; // Диагональ U всегда 1 в Doolittle's методе
             } 
             else 
             {
@@ -274,7 +203,7 @@ bool LU_SQ_Decomposition(ProfileMatrix& profileA)
         }
     }
 
-    // Объединяем L и U в одну матрицу: U выше диагонали, L ниже (диагональ L - 1)
+    // Объединяем L и U в одну матрицу: U выше диагонали, L ниже (диагональ L - корни)
     vector<vector<double>> LU(n, vector<double>(n, 0.0));
     for(int i=0; i<n; i++) {
         for(int j=0; j<n; j++) {
@@ -282,10 +211,10 @@ bool LU_SQ_Decomposition(ProfileMatrix& profileA)
                 LU[i][j] = L[i][j];
             }
             else if(i == j) {
-                LU[i][j] = L[i][j]; // Можно хранить единицы для U[j][j], если используется Doolittle
+                LU[i][j] = L[i][j]; // Хранение диагонали L
             }
             else {
-                LU[i][j] = U[i][j];
+                LU[i][j] = U[j][i];
             }
         }
     }
@@ -297,17 +226,14 @@ bool LU_SQ_Decomposition(ProfileMatrix& profileA)
 }
 
 // Метод Гаусса с выбором ведущего элемента для профильной матрицы с подсчетом операций
-bool GaussianEliminationPartialPivoting(ProfileMatrix& profileA, vector<double>& b) {
+bool GaussianEliminationPartialPivoting(ProfileMatrix& profileA, vector<double>& b, vector<double>& solution) {
     int n = profileA.n;
     // Преобразуем профильную матрицу обратно в плотную
     vector<vector<double>> A = profileToDense(profileA);
     
-    // Если вектор b не задан, можно инициализировать его нулями или считать
-    // В данном случае считать, что система Ax = b решается отдельно
-
-    // Создаем расширенную матрицу [A | b]
-    // Для простоты, если b не используется непосредственно, можно пропустить
-
+    // Создаем копию вектора b для работы
+    vector<double> augmented_b = b;
+    
     // Применяем метод Гаусса с выбором ведущего элемента
     for(int i=0; i<n; i++) {
         // Поиск максимального элемента для частичного выбора ведущего
@@ -328,7 +254,7 @@ bool GaussianEliminationPartialPivoting(ProfileMatrix& profileA, vector<double>&
         // Перестановка строк, если необходимо
         if(maxRow != i) {
             swap(A[i], A[maxRow]);
-            swap(b[i], b[maxRow]); // Если есть вектор b
+            swap(augmented_b[i], augmented_b[maxRow]); // Перестановка вектора b
             opCount.swaps +=1;
         }
 
@@ -342,144 +268,325 @@ bool GaussianEliminationPartialPivoting(ProfileMatrix& profileA, vector<double>&
                 opCount.multiplications +=1;
                 opCount.additions +=1;
             }
+            augmented_b[k] -= factor * augmented_b[i];
+            opCount.multiplications +=1;
+            opCount.additions +=1;
         }
     }
 
-    // Установка верхнетреугольной матрицы обратно в профильную
-    profileA = denseToProfile(A);
+    // Обратный ход для решения системы
+    solution = vector<double>(n, 0.0);
+    for(int i = n-1; i >=0; i--) {
+        solution[i] = augmented_b[i];
+        for(int j = i+1; j < n; j++) {
+            solution[i] -= A[i][j] * solution[j];
+            opCount.multiplications +=1;
+            opCount.additions +=1;
+        }
+        solution[i] /= A[i][i];
+        opCount.divisions +=1;
+    }
 
     return true;
 }
 
-// Тестирование LU-разложения на матрице Гильберта
-void testHilbertLU() {
-    cout << "=== Тест разложения LU_SQ на матрице Гильберта ===" << endl;
-    int n;
-    cout << "Введите размер матрицы Гильберта: ";
-    cin >> n;
-    vector<vector<double>> denseH = generateHilbertMatrix(n);
-    ProfileMatrix H = denseToProfile(denseH);
-    vector<double> x(n, 1.0); // Пример вектора
+// Функция для генерации всех тестовых случаев
+vector<TestCase> generateTestCases() {
+    vector<TestCase> tests;
 
-    cout << "Матрица Гильберта H:" << endl;
-    printMatrix(H);
-    cout << endl << "Вектор x:" << endl;
-    printVector(x);
+    // Тест 1: Минимальный размер (1x1)
+    tests.push_back(TestCase{
+        "Тест 1: Минимальный размер (1x1)",
+        "tests/matrix1.txt",
+        "tests/vector1.txt"
+    });
 
-    opCount.reset();
-    bool decomposed = LU_SQ_Decomposition(H);
-    cout << endl;
-    if(decomposed) {
-        cout << "Матрица L и U (вместе в H):" << endl;
-        printMatrix(H);
-        cout << endl;
-        opCount.print();
-    } else {
-        cout << "Разложение не удалось." << endl;
-    }
-    cout << "==============================================\n" << endl;
+    // Тест 2: Маленькая регулярная матрица (2x2)
+    tests.push_back(TestCase{
+        "Тест 2: Маленькая регулярная матрица (2x2)",
+        "tests/matrix2.txt",
+        "tests/vector2.txt"
+    });
+
+    // Тест 3: Сингулярная матрица (3x3)
+    tests.push_back(TestCase{
+        "Тест 3: Сингулярная матрица (3x3)",
+        "tests/matrix3.txt",
+        "tests/vector3.txt"
+    });
+
+    // Тест 4: Единичная матрица (4x4)
+    tests.push_back(TestCase{
+        "Тест 4: Единичная матрица (4x4)",
+        "tests/matrix4.txt",
+        "tests/vector4.txt"
+    });
+
+    // Тест 5: Матрица Гильберта (5x5)
+    tests.push_back(TestCase{
+        "Тест 5: Матрица Гильберта (5x5)",
+        "tests/matrix5.txt",
+        "tests/vector5.txt"
+    });
+
+    // Тест 6: Матрица с нулевыми элементами (3x3)
+    tests.push_back(TestCase{
+        "Тест 6: Матрица с нулевыми элементами (3x3)",
+        "tests/matrix6.txt",
+        "tests/vector6.txt"
+    });
+
+    // Тест 7: Несимметричная матрица (4x4)
+    tests.push_back(TestCase{
+        "Тест 7: Несимметричная матрица (4x4)",
+        "tests/matrix7.txt",
+        "tests/vector7.txt"
+    });
+
+    // Тест 8: Матрица с большинством нулей (5x5)
+    tests.push_back(TestCase{
+        "Тест 8: Матрица с большинством нулей (5x5)",
+        "tests/matrix8.txt",
+        "tests/vector8.txt"
+    });
+
+    // Тест 9: Матрица с повторяющимися строками (3x3)
+    tests.push_back(TestCase{
+        "Тест 9: Матрица с повторяющимися строками (3x3)",
+        "tests/matrix9.txt",
+        "tests/vector9.txt"
+    });
+
+    // Тест 10: Большая матрица (10x10) с некоторыми нулями
+    tests.push_back(TestCase{
+        "Тест 10: Большая матрица (10x10) с некоторыми нулями",
+        "tests/matrix10.txt",
+        "tests/vector10.txt"
+    });
+
+    return tests;
 }
 
-// Тестирование метода Гаусса на профильной матрице
-void testGaussianEliminationProfile(const ProfileMatrix& originalProfileA, const vector<double>& original_b) {
-    cout << "=== Тест разложения методом Гаусса с выбором ведущего элемента ===" << endl;
-    // Создаем копию матрицы и вектора для работы
-    ProfileMatrix A = originalProfileA;
-    vector<double> b = original_b;
+// Функция для чтения матрицы из файла
+bool readMatrixFromFile(const string& filename, vector<vector<double>>& matrix, int& size) {
+    ifstream matrixStream(filename);
+    if (!matrixStream.is_open()) {
+        cerr << "Не удалось открыть файл матрицы: " << filename << endl;
+        return false;
+    }
 
-    cout << "Исходная матрица A:" << endl;
+    matrixStream >> size;
+    if(size <= 0) {
+        cerr << "Неверный размер матрицы в файле: " << filename << endl;
+        return false;
+    }
+
+    matrix.assign(size, vector<double>(size, 0.0));
+
+    for(int i = 0; i < size; i++) {
+        for(int j = 0; j < size; j++) {
+            if(!(matrixStream >> matrix[i][j])) {
+                cerr << "Ошибка чтения матрицы из файла: " << filename << endl;
+                return false;
+            }
+        }
+    }
+
+    matrixStream.close();
+    return true;
+}
+
+// Функция для чтения вектора из файла
+bool readVectorFromFile(const string& filename, vector<double>& vec, int size) {
+    ifstream vectorStream(filename);
+    if (!vectorStream.is_open()) {
+        cerr << "Не удалось открыть файл вектора: " << filename << endl;
+        return false;
+    }
+
+    vec.assign(size, 0.0);
+    for(int i = 0; i < size; i++) {
+        if(!(vectorStream >> vec[i])) {
+            cerr << "Ошибка чтения вектора из файла: " << filename << endl;
+            return false;
+        }
+    }
+
+    vectorStream.close();
+    return true;
+}
+
+// Функция для загрузки теста из файлов
+bool loadTest(const TestCase& test, ProfileMatrix& A, vector<double>& b, int& size) {
+    vector<vector<double>> denseMatrix;
+    if(!readMatrixFromFile(test.matrixFile, denseMatrix, size)) {
+        return false;
+    }
+
+    if(!readVectorFromFile(test.vectorFile, b, size)) {
+        return false;
+    }
+
+    A = denseToProfile(denseMatrix);
+    return true;
+}
+
+// Функция для вывода текущего теста
+void displayCurrentTest(const TestCase& test, const ProfileMatrix& A, const vector<double>& b) {
+    cout << "\n--- Текущий Загруженный Тест ---" << endl;
+    cout << "Название теста: " << test.name << endl;
+    cout << "Матрица A (из файла " << test.matrixFile << "):" << endl;
     printMatrix(A);
-    cout << endl << "Вектор b:" << endl;
+    cout << endl << "Вектор b (из файла " << test.vectorFile << "):" << endl;
     printVector(b);
     cout << endl;
-
-    opCount.reset();
-    bool success = GaussianEliminationPartialPivoting(A, b);
-    if(success) {
-        cout << "Разложение методом Гаусса выполнено успешно." << endl;
-        cout << "Верхнетреугольная матрица A после разложения:" << endl;
-        printMatrix(A);
-        cout << endl;
-        opCount.print();
-    } else {
-        cout << "Разложение не удалось." << endl;
-    }
-    cout << "==============================================\n" << endl;
 }
 
-// Основная функция
+// Основная функция с меню
 int main() {
     setlocale(LC_ALL, "Russian");
 
+    // Генерация всех тестовых случаев
+    vector<TestCase> tests = generateTestCases();
+
+    // Переменные для текущего выбранного теста
     ProfileMatrix A;
-    vector<double> x, F;
+    vector<double> b, solution, F;
 
-    // Чтение матрицы и вектора из файлов
-    if (!readMatrixAndVector("matrix.txt", "vector.txt", A, x)) 
-    {
-        return 1;
-    }
+    // Индекс текущего теста (-1 означает, что тест не выбран)
+    int currentTestIndex = -1;
+    int mainChoice = -1;
+    int algorithmChoice = -1;
 
-    cout << "Матрица A:" << endl;
-    printMatrix(A);
-    cout << endl << "Вектор x:" << endl;
-    printVector(x);
-
-    // Копия исходной матрицы для повторного использования в тестах
-    ProfileMatrix originalA = A;
-    vector<double> original_b = x;
-
-    // LU-разложение
-    opCount.reset();
-    if (LU_SQ_Decomposition(A)) 
-    {
-        cout << endl << "Матрица L и U (вместе в A):" << endl;
-        printMatrix(A);
-
-        // Умножение матрицы на вектор
-        vector<double> y = multiplyMatrixVector(profileToDense(A), x);
-        cout << endl << "Вектор y (результат умножения A * x):" << endl;
-        printVector(y);
-
-        F = multiplyMatrixVector(profileToDense(A), y);
-        cout << endl << "Вектор F (результат умножения A * y):" << endl;
-        printVector(F);
-
-        opCount.print();
-
-        // Запись результатов в файлы
-        writeMatrix("matrix_decomposed.txt", A);
-        writeVector("vector_F.txt", F);
-    }
-    else {
-        cout << "Разложение невозможно." << endl;
-    }
-
-    cout << "\n==============================================\n" << endl;
-
-    int testChoice;
-    do {
-        cout << "Выберите тест для выполнения:" << endl;
-        cout << "1. Разложение LU_SQ на матрице Гильберта" << endl;
-        cout << "2. Разложение методом Гаусса с выбором ведущего элемента" << endl;
-        cout << "0. Выход" << endl;
+    while(true) {
+        // Главное меню
+        cout << "================== Главное Меню ==================" << endl;
+        cout << "1. Выбрать тест" << endl;
+        cout << "2. Выбрать алгоритм для выполнения" << endl;
+        cout << "3. Вывести текущий тест" << endl;
+        cout << "4. Выход" << endl;
         cout << "Ваш выбор: ";
-        cin >> testChoice;
+        cin >> mainChoice;
 
-        switch(testChoice) {
-            case 1:
-                testHilbertLU();
-                break;
-            case 2:
-                testGaussianEliminationProfile(originalA, original_b);
-                break;
-            case 0:
-                cout << "Выход из программы." << endl;
-                break;
-            default:
-                cout << "Неверный выбор. Попробуйте снова." << endl;
+        if(mainChoice == 1) {
+            // Меню выбора теста
+            cout << "\n--- Список Тестов ---" << endl;
+            for(int i=0; i<tests.size(); i++) {
+                cout << i+1 << ". " << tests[i].name << endl;
+            }
+            cout << "Введите номер теста для загрузки: ";
+            int selectedTest;
+            cin >> selectedTest;
+
+            if(selectedTest < 1 || selectedTest > tests.size()) {
+                cout << "Неверный номер теста. Попробуйте снова.\n" << endl;
+                continue;
+            }
+
+            // Загрузка выбранного теста
+            TestCase currentTest = tests[selectedTest -1];
+            int size = 0;
+            bool loaded = loadTest(currentTest, A, b, size);
+            if(loaded) {
+                currentTestIndex = selectedTest -1;
+                cout << "Тест \"" << currentTest.name << "\" успешно загружен.\n" << endl;
+            }
+            else {
+                cout << "Не удалось загрузить тест \"" << currentTest.name << "\".\n" << endl;
+            }
+
         }
-    } while(testChoice != 0);
+        else if(mainChoice == 2) {
+            // Проверка, загружен ли тест
+            if(currentTestIndex == -1) {
+                cout << "Сначала загрузите тест (опция 1).\n" << endl;
+                continue;
+            }
+
+            // Меню выбора алгоритма
+            cout << "\n--- Выбор Алгоритма ---" << endl;
+            cout << "1. LU-разложение" << endl;
+            cout << "2. Метод Гаусса с выбором ведущего элемента" << endl;
+            cout << "Введите номер алгоритма для выполнения: ";
+            cin >> algorithmChoice;
+
+            if(algorithmChoice == 1) {
+                // Применение LU-разложения
+                ProfileMatrix LU = A; // Копия матрицы для разложения
+                cout << "\nВыполнение LU-разложения..." << endl;
+                opCount.reset();
+                bool decomposed = LU_SQ_Decomposition(LU);
+                if(decomposed) {
+                    cout << "Разложение LU выполнено успешно." << endl;
+                    cout << "Матрица L и U (вместе в LU):" << endl;
+                    printMatrix(LU);
+                    cout << endl;
+                    opCount.print();
+
+                    // Умножение матриц L и U на вектор b
+                    vector<vector<double>> denseLU = profileToDense(LU);
+                    vector<double> y = multiplyMatrixVector(denseLU, b);
+                    cout << "\nВектор y (результат умножения LU * b):" << endl;
+                    printVector(y);
+
+                    F = multiplyMatrixVector(denseLU, y);
+                    cout << "\nВектор F (результат умножения LU * y):" << endl;
+                    printVector(F);
+                }
+                else {
+                    cout << "Разложение LU не удалось.\n" << endl;
+                }
+                cout << "==============================================\n" << endl;
+            }
+            else if(algorithmChoice == 2) {
+                // Применение метода Гаусса
+                ProfileMatrix GA = A; // Копия матрицы для разложения
+                vector<double> gb = b; // Копия вектора
+                solution.clear();
+
+                cout << "\nВыполнение метода Гаусса..." << endl;
+                opCount.reset();
+                bool success = GaussianEliminationPartialPivoting(GA, gb, solution);
+                if(success) {
+                    cout << "Разложение методом Гаусса выполнено успешно." << endl;
+                    cout << "Верхнетреугольная матрица A после разложения:" << endl;
+                    printMatrix(GA);
+                    cout << endl;
+                    opCount.print();
+
+                    // Вывод решения системы
+                    cout << "\nРешение системы AX = b:" << endl;
+                    printVector(solution);
+                }
+                else {
+                    cout << "Разложение методом Гаусса не удалось.\n" << endl;
+                }
+                cout << "==============================================\n" << endl;
+            }
+            else {
+                cout << "Неверный выбор алгоритма. Попробуйте снова.\n" << endl;
+            }
+        }
+        else if(mainChoice == 3) {
+            // Вывод текущего теста
+            if(currentTestIndex == -1) {
+                cout << "Нет загруженного теста. Сначала загрузите тест (опция 1).\n" << endl;
+                continue;
+            }
+
+            TestCase currentTest = tests[currentTestIndex];
+            cout << "\n--- Текущий Загруженный Тест ---" << endl;
+            displayCurrentTest(currentTest, A, b);
+        }
+        else if(mainChoice == 4) {
+            // Выход из программы
+            cout << "Выход из программы. До свидания!" << endl;
+            break;
+        }
+        else {
+            cout << "Неверный выбор. Попробуйте снова.\n" << endl;
+        }
+    }
 
     return 0;
 }
